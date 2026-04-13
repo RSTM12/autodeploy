@@ -1,8 +1,8 @@
 """
-ClawPump Auto Deploy Script
-- Cek saldo gasless tiap 5 detik
-- Rotate IP via Tor tiap deploy
-- Kirim hasil ke Telegram
+ClawPump Auto Deploy Script - SPEED MODE
+- Siapkan semua (IP, gambar, token) SAMBIL nunggu saldo
+- Cek saldo tiap 1 detik
+- Begitu saldo ada langsung launch dalam hitungan detik!
 """
 
 import requests
@@ -22,8 +22,8 @@ BOT_TOKEN = "isi_token_bot_telegram_kamu"
 CHAT_ID   = "isi_chat_id_kamu"
 
 CLAWPUMP_BASE       = "https://clawpump.tech"
-DELAY_ANTAR_LAUNCH  = 5   # jeda antar deploy (detik)
-DELAY_CEK_TREASURY  = 5   # jeda cek ulang saldo (detik)
+DELAY_ANTAR_LAUNCH  = 3
+DELAY_CEK_TREASURY  = 1
 # ══════════════════════════════════════════
 
 TOR_SOCKS = {
@@ -67,8 +67,6 @@ COLORS = [
     (100, 200, 255),(255, 200, 100),(200, 100, 255),
 ]
 
-# ── Telegram ──────────────────────────────
-
 def tg(text):
     try:
         requests.post(
@@ -83,8 +81,6 @@ def tg(text):
         )
     except Exception as e:
         print(f"  [TG ERROR] {e}")
-
-# ── Tor ───────────────────────────────────
 
 def tor_aktif():
     try:
@@ -106,39 +102,33 @@ def get_ip():
 
 def rotate_ip():
     if not tor_aktif():
-        print("  [!] Tor tidak aktif")
         return False
     try:
         lama = get_ip()
         with stem.control.Controller.from_port(port=9051) as c:
             c.authenticate()
             c.signal(stem.Signal.NEWNYM)
-        print(f"  🔄 Rotate {lama} →", end=" ", flush=True)
         for _ in range(20):
             time.sleep(3)
             baru = get_ip()
             if baru and baru != lama:
-                print(f"{baru} ✅")
                 return True
-        print(f"sama, lanjut")
         return True
-    except Exception as e:
-        print(f"  [!] Rotate error: {e}")
+    except:
         return False
-
-# ── Treasury ──────────────────────────────
 
 def cek_saldo():
     try:
-        r = requests.get(f"{CLAWPUMP_BASE}/api/treasury", timeout=15)
+        r = requests.get(
+            f"{CLAWPUMP_BASE}/api/treasury",
+            timeout=5
+        )
         d = r.json()
         affordable = d.get("wallet", {}).get("launchesAffordable", 0)
         status = d.get("status", "")
         return status == "healthy" and affordable > 0, affordable
     except:
         return False, 0
-
-# ── Gambar ────────────────────────────────
 
 def buat_gambar(symbol):
     size = 512
@@ -152,8 +142,6 @@ def buat_gambar(symbol):
     img.save(buf, format="PNG")
     buf.seek(0)
     return buf
-
-# ── ClawPump API ──────────────────────────
 
 def upload(buf):
     try:
@@ -190,29 +178,50 @@ def launch(api_key, name, symbol, desc, image_url):
     except Exception as e:
         return {"success": False, "error": str(e), "_sc": 0}
 
-# ── Simpan hasil ──────────────────────────
-
 def simpan(baris):
     with open("results.txt", "a", encoding="utf-8") as f:
         f.write(baris + "\n")
 
-# ── Load keys ─────────────────────────────
-
 def load_keys():
     if not os.path.exists("keys.txt"):
         print("❌ File keys.txt tidak ada!")
-        print("   Buat dulu: nano keys.txt")
-        print("   Isi satu cpk_ key per baris")
         return []
     with open("keys.txt") as f:
         keys = [l.strip() for l in f if l.strip().startswith("cpk_")]
     return keys
 
-# ── MAIN ──────────────────────────────────
+def persiapan(nomor, total):
+    print(f"\n  ⚙️  Persiapan [{nomor}/{total}]...")
+
+    name   = random.choice(NAMES) + str(random.randint(10, 9999))
+    symbol = random.choice(SYMBOLS)
+    desc   = random.choice(DESCRIPTIONS)
+    print(f"  📝 Token: {name} (${symbol})")
+
+    print(f"  🔄 Rotate IP...", end=" ", flush=True)
+    rotate_ip()
+    ip_baru = get_ip()
+    print(f"{ip_baru} ✅")
+
+    print(f"  🖼️  Upload gambar...", end=" ", flush=True)
+    buf = buat_gambar(symbol)
+    img_url = upload(buf)
+    if img_url:
+        print(f"OK ✅")
+    else:
+        print(f"GAGAL ❌")
+
+    return {
+        "name": name,
+        "symbol": symbol,
+        "desc": desc,
+        "img_url": img_url,
+        "ip": ip_baru,
+    }
 
 def main():
     print("=" * 50)
-    print("  🦞 ClawPump Auto Deploy v2 — Termux")
+    print("  🦞 ClawPump Auto Deploy — SPEED MODE ⚡")
     print("=" * 50)
 
     if "isi_token" in BOT_TOKEN or "isi_chat" in CHAT_ID:
@@ -221,7 +230,6 @@ def main():
 
     if not tor_aktif():
         print("\n❌ Tor tidak aktif! Jalankan: tor &")
-        print("   Tunggu 'Bootstrapped 100%' lalu coba lagi")
         return
 
     ip = get_ip()
@@ -231,11 +239,13 @@ def main():
     if not keys:
         return
 
-    print(f"📋 Total keys: {len(keys)}\n")
+    print(f"📋 Total keys: {len(keys)}")
+    print(f"⚡ Mode: SPEED (cek saldo tiap {DELAY_CEK_TREASURY} detik)\n")
 
     tg(
-        f"🚀 *Auto Deploy Dimulai*\n"
+        f"🚀 *Auto Deploy SPEED MODE*\n"
         f"📋 Keys: `{len(keys)}`\n"
+        f"⚡ Cek saldo tiap `{DELAY_CEK_TREASURY}` detik\n"
         f"🔒 Tor IP: `{ip}`"
     )
 
@@ -243,71 +253,59 @@ def main():
 
     for i, api_key in enumerate(keys, 1):
         ks = api_key[:18] + "..."
-        print(f"[{i}/{len(keys)}] {ks}")
+        print(f"\n{'='*50}")
+        print(f"[{i}/{len(keys)}] Key: {ks}")
 
-        # Cek saldo gasless
-        print(f"  💰 Cek saldo...", end=" ", flush=True)
-        coba = 0
-        while True:
-            ok, affordable = cek_saldo()
-            if ok:
-                print(f"✅ ({affordable} launches tersedia)")
-                break
-            coba += 1
-            if coba == 1:
-                print(f"kosong, tunggu...")
-                tg(f"⏳ *Saldo Gasless Kosong*\nKey {i}: `{ks}`\nCek ulang tiap {DELAY_CEK_TREASURY}s...")
-            time.sleep(DELAY_CEK_TREASURY)
-            print(f"  💰 Cek ulang #{coba+1}...", end=" ", flush=True)
+        prep = persiapan(i, len(keys))
 
-        # Rotate IP
-        rotate_ip()
-
-        # Generate token
-        name   = random.choice(NAMES) + str(random.randint(10, 9999))
-        symbol = random.choice(SYMBOLS)
-        desc   = random.choice(DESCRIPTIONS)
-        print(f"  📝 {name} (${symbol})")
-
-        # Upload gambar
-        print(f"  🖼️  Upload...", end=" ", flush=True)
-        buf = buat_gambar(symbol)
-        img_url = upload(buf)
-        if not img_url:
-            print("GAGAL ❌")
+        if not prep["img_url"]:
             gagal += 1
             simpan(f"[FAIL-UPLOAD] {api_key}")
             tg(f"❌ *Upload Gagal*\nKey: `{ks}`")
             continue
-        print("OK ✅")
 
-        # Launch
-        print(f"  🚀 Launch...", end=" ", flush=True)
-        hasil = launch(api_key, name, symbol, desc, img_url)
+        print(f"\n  ⏳ Nunggu saldo gasless...", end=" ", flush=True)
+        coba = 0
+        while True:
+            ok, affordable = cek_saldo()
+            if ok:
+                print(f"ADA! ({affordable} launches) ⚡")
+                break
+            coba += 1
+            if coba % 10 == 0:
+                print(f"\n  ⏳ Masih nunggu ({coba} detik)...", end=" ", flush=True)
+            time.sleep(DELAY_CEK_TREASURY)
+
+        print(f"  🚀 LAUNCH!", end=" ", flush=True)
+        t_mulai = time.time()
+        hasil = launch(api_key, prep["name"], prep["symbol"],
+                       prep["desc"], prep["img_url"])
+        t_selesai = time.time()
+        durasi = round(t_selesai - t_mulai, 2)
 
         if hasil.get("success"):
             pump_url = hasil.get("pumpUrl", "-")
             mint     = hasil.get("mintAddress", "-")
             explorer = hasil.get("explorerUrl", "-")
-            print(f"SUKSES ✅")
+            print(f"SUKSES dalam {durasi}s ✅")
             print(f"  🔗 {pump_url}")
             sukses += 1
-            simpan(f"[OK] {api_key} | {name} | {symbol} | {mint} | {pump_url}")
+            simpan(f"[OK] {api_key} | {prep['name']} | {prep['symbol']} | {mint} | {pump_url}")
             tg(
-                f"✅ *Deploy Sukses!*\n"
+                f"✅ *Deploy Sukses!* ({durasi}s)\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"🪙 *Nama:* `{name}`\n"
-                f"💲 *Symbol:* `${symbol}`\n"
+                f"🪙 *Nama:* `{prep['name']}`\n"
+                f"💲 *Symbol:* `${prep['symbol']}`\n"
                 f"🔑 *Key:* `{ks}`\n"
                 f"📍 *Mint:* `{mint}`\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"🔗 [Pump\.fun]({pump_url})\n"
+                f"🔗 [Pump.fun]({pump_url})\n"
                 f"🔍 [Explorer]({explorer})"
             )
 
         elif hasil.get("_sc") == 429:
             jam = hasil.get("retryAfterHours", "?")
-            print(f"RATE LIMITED ⏳ ({jam} jam)")
+            print(f"RATE LIMITED ⏳")
             limit += 1
             simpan(f"[LIMIT] {api_key} | {jam}h")
             tg(
@@ -330,10 +328,9 @@ def main():
         if i < len(keys):
             time.sleep(DELAY_ANTAR_LAUNCH)
 
-    # Summary
-    print("\n" + "=" * 50)
+    print(f"\n{'='*50}")
     print(f"  ✅ Sukses: {sukses} | ⏳ Limit: {limit} | ❌ Gagal: {gagal}")
-    print("=" * 50)
+    print(f"{'='*50}")
     tg(
         f"🏁 *Selesai!*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
