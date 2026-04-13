@@ -1,0 +1,4 @@
+requests[socks]
+stem
+PySocks
+Pillow
